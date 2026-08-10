@@ -1,10 +1,4 @@
-import FileUpload from "./components/FileUpload";
-import "./App.css";
-
+import StreamWeaverPreview from './components/StreamWeaverPreview';
 export default function App() {
-  return (
-    <div className="app">
-      <FileUpload />
-    </div>
-  );
+  return <StreamWeaverPreview />;
 }
