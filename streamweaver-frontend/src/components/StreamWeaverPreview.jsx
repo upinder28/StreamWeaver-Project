@@ -172,4 +172,29 @@ export default function StreamWeaverPreview() {
     },
     [beginParse]
   );
+
+   const dropTargetActive = status === "idle" || status === "error";
+
+  // ---- measure grid viewport so react-window knows its pixel height ------
+  useEffect(() => {
+    if (status !== "ready" || !gridWrapRef.current) return;
+    const el = gridWrapRef.current;
+    const update = () => setGridHeight(el.clientHeight || 520);
+    update();
+    const ro = new ResizeObserver(update);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [status]);
+
+  const totalRows = previewRows.length;
+  const totalGridWidth = useMemo(
+    () => Math.max(columns.reduce((sum, c) => sum + c.width, 0), 640),
+    [columns]
+  );
+
+  // react-window calls this every time the mounted window of rows changes —
+  // it's how we know, at any moment, exactly how many DOM rows actually exist.
+  const handleItemsRendered = useCallback(({ overscanStartIndex, overscanStopIndex }) => {
+    setMountedRange({ start: overscanStartIndex, end: overscanStopIndex });
+  }, []);
 }
