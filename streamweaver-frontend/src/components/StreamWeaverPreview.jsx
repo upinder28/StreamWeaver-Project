@@ -197,4 +197,27 @@ export default function StreamWeaverPreview() {
   const handleItemsRendered = useCallback(({ overscanStartIndex, overscanStopIndex }) => {
     setMountedRange({ start: overscanStartIndex, end: overscanStopIndex });
   }, []);
+
+  const Row = useCallback(
+    ({ index, style }) => {
+      const row = previewRows[index];
+      return (
+        <div
+          style={{
+            ...style,
+            display: "flex",
+            background: index % 2 === 0 ? "#0E1420" : "#111826",
+            borderBottom: "1px solid #161D28",
+          }}
+        >
+          {columns.map((c, ci) => (
+            <div key={c.key} style={{ ...styles.dataCell, width: c.width }}>
+              {row && row[ci] !== undefined ? row[ci] : ""}
+            </div>
+          ))}
+        </div>
+      );
+    },
+    [previewRows, columns]
+  );
 }
