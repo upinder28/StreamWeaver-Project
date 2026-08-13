@@ -198,7 +198,6 @@ export default function StreamWeaverPreview() {
     setMountedRange({ start: overscanStartIndex, end: overscanStopIndex });
   }, []);
 
-
   const Row = useCallback(
     ({ index, style }) => {
       const row = previewRows[index];
@@ -221,6 +220,7 @@ export default function StreamWeaverPreview() {
     },
     [previewRows, columns]
   );
+
 
     useEffect(() => {
     return () => {
@@ -395,4 +395,5 @@ export default function StreamWeaverPreview() {
       )}
     </div>
   );
+
 }
