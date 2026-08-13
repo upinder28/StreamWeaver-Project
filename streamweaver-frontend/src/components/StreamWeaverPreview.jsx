@@ -173,7 +173,7 @@ export default function StreamWeaverPreview() {
     [beginParse]
   );
 
-   const dropTargetActive = status === "idle" || status === "error";
+  const dropTargetActive = status === "idle" || status === "error";
 
   // ---- measure grid viewport so react-window knows its pixel height ------
   useEffect(() => {
@@ -197,4 +197,202 @@ export default function StreamWeaverPreview() {
   const handleItemsRendered = useCallback(({ overscanStartIndex, overscanStopIndex }) => {
     setMountedRange({ start: overscanStartIndex, end: overscanStopIndex });
   }, []);
+
+
+  const Row = useCallback(
+    ({ index, style }) => {
+      const row = previewRows[index];
+      return (
+        <div
+          style={{
+            ...style,
+            display: "flex",
+            background: index % 2 === 0 ? "#0E1420" : "#111826",
+            borderBottom: "1px solid #161D28",
+          }}
+        >
+          {columns.map((c, ci) => (
+            <div key={c.key} style={{ ...styles.dataCell, width: c.width }}>
+              {row && row[ci] !== undefined ? row[ci] : ""}
+            </div>
+          ))}
+        </div>
+      );
+    },
+    [previewRows, columns]
+  );
+
+    useEffect(() => {
+    return () => {
+      if (parserRef.current) parserRef.current.abort();
+    };
+  }, []);
+
+  return (
+    <div
+      style={styles.app}
+      onDragOver={
+        dropTargetActive
+          ? (e) => {
+              e.preventDefault();
+              setDragActive(true);
+            }
+          : undefined
+      }
+      onDragLeave={dropTargetActive ? () => setDragActive(false) : undefined}
+      onDrop={dropTargetActive ? onDrop : undefined}
+    >
+      <style>{`
+        @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap');
+        html, body, #root { height: 100%; width: 100%; margin: 0; padding: 0; }
+        #root { max-width: none !important; text-align: left; display: block; }
+        body { background: #0B0F14; display: block; place-items: unset; }
+        * { box-sizing: border-box; }
+        .sw-scroll::-webkit-scrollbar { width: 10px; height: 10px; }
+        .sw-scroll::-webkit-scrollbar-track { background: #10161F; }
+        .sw-scroll::-webkit-scrollbar-thumb { background: #2A3341; border-radius: 6px; }
+        .sw-scroll::-webkit-scrollbar-thumb:hover { background: #3A4557; }
+        @keyframes sw-thread {
+          0% { stroke-dashoffset: 0; }
+          100% { stroke-dashoffset: -48; }
+        }
+        @keyframes sw-fade-up {
+          from { opacity: 0; transform: translateY(6px); }
+          to { opacity: 1; transform: translateY(0); }
+        }
+        .sw-thread-line { stroke-dasharray: 6 6; animation: sw-thread 1.4s linear infinite; }
+        .sw-ring { transition: border-color 0.18s ease, background 0.18s ease; }
+        .sw-ring.drag { border-color: #E8A33D !important; background: rgba(232,163,61,0.05) !important; }
+        .sw-hero { animation: sw-fade-up 0.4s ease both; }
+      `}</style>
+
+      <WeaveBackdrop active={status === "parsing"} />
+
+      <header style={styles.header}>
+        <div style={styles.brandRow}>
+          <LoomMark />
+          <div>
+            <div style={styles.brandName}>StreamWeaver</div>
+            <div style={styles.brandTag}>No-code ETL that never runs out of memory</div>
+          </div>
+        </div>
+        {status === "ready" && (
+          <button style={styles.resetBtn} onClick={reset}>
+            <RotateCcw size={14} />
+            New file
+          </button>
+        )}
+      </header>
+
+      {dropTargetActive && (
+        <div style={styles.heroWrap}>
+          <div className={`sw-ring${dragActive ? " drag" : ""}`} style={styles.dropRing} />
+          <div className="sw-hero" style={styles.hero}>
+            <Upload size={30} color="#E8A33D" strokeWidth={1.6} />
+            <div style={styles.dropTitle}>Drop a CSV to preview the first 1,000 rows</div>
+            <div style={styles.dropSub}>
+              Parsed in chunks as it streams in — a 5&nbsp;GB file won't freeze this tab.
+            </div>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept=".csv"
+              style={{ display: "none" }}
+              onChange={(e) => handleFiles(e.target.files)}
+            />
+            <button style={styles.browseBtn} onClick={() => fileInputRef.current && fileInputRef.current.click()}>
+              Browse files
+            </button>
+            <div style={styles.dropHint}>or drop it anywhere on this page</div>
+            {status === "error" && (
+              <div style={styles.errorLine}>
+                <AlertTriangle size={14} color="#E85D5D" />
+                <span>{errorMsg}</span>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {status === "parsing" && (
+        <div style={styles.heroWrap}>
+          <div className="sw-hero" style={styles.hero}>
+            <div style={styles.dropTitle}>Weaving through {fileName}…</div>
+            <div style={styles.dropSub}>{formatBytes(fileSize)} total</div>
+            <div style={styles.progressTrack}>
+              <div style={{ ...styles.progressFill, width: `${progress}%` }} />
+            </div>
+            <div style={styles.parsingStats}>
+              <span>{formatNumber(progress)}% streamed</span>
+              <span>·</span>
+              <span>{formatNumber(rowsSeen)} rows seen</span>
+              <span>·</span>
+              <span>{formatNumber(rate)} rows/sec</span>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {status === "ready" && (
+        <div style={styles.readyWrap}>
+          <div style={styles.statsBar}>
+            <Stat icon={<Rows3 size={15} color="#7C8798" />} label="rows parsed" value={formatNumber(rowsSeen)} />
+            <Stat icon={<Columns3 size={15} color="#7C8798" />} label="columns" value={formatNumber(columns.length)} />
+            <Stat icon={<HardDrive size={15} color="#7C8798" />} label="file size" value={formatBytes(fileSize)} />
+            <Stat
+              icon={
+                errorRowCount > 0 ? (
+                  <AlertTriangle size={15} color="#E8A33D" />
+                ) : (
+                  <CheckCircle2 size={15} color="#57C278" />
+                )
+              }
+              label="malformed rows"
+              value={formatNumber(errorRowCount)}
+              tone={errorRowCount > 0 ? "warn" : "ok"}
+            />
+            <div style={styles.statsSpacer} />
+            <div style={styles.previewBadge}>
+              <Gauge size={13} color="#E8A33D" />
+              previewing first {formatNumber(Math.min(totalRows, PREVIEW_LIMIT))} rows in memory
+            </div>
+          </div>
+
+          <div ref={gridWrapRef} style={styles.gridWrap}>
+            <div className="sw-scroll" style={styles.gridScrollX}>
+              <div style={{ width: totalGridWidth }}>
+                <div style={{ ...styles.headerRow, width: totalGridWidth }}>
+                  {columns.map((c) => (
+                    <div key={c.key} style={{ ...styles.headerCell, width: c.width }}>
+                      {c.label}
+                    </div>
+                  ))}
+                </div>
+                {gridHeight > HEADER_HEIGHT && (
+                  <List
+                    className="sw-scroll"
+                    height={gridHeight - HEADER_HEIGHT}
+                    width={totalGridWidth}
+                    itemCount={totalRows}
+                    itemSize={ROW_HEIGHT}
+                    overscanCount={OVERSCAN}
+                    onItemsRendered={handleItemsRendered}
+                    style={{ overflowX: "hidden" }}
+                  >
+                    {Row}
+                  </List>
+                )}
+              </div>
+            </div>
+          </div>
+
+          <div style={styles.footNote}>
+            <FileSpreadsheet size={13} color="#5A6472" />
+            {fileName} · react-window has only {formatNumber(mountedRange.end - mountedRange.start + 1)} of{" "}
+            {formatNumber(totalRows)} preview rows mounted to the DOM right now
+          </div>
+        </div>
+      )}
+    </div>
+  );
 }
