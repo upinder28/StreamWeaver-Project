@@ -397,3 +397,32 @@ export default function StreamWeaverPreview() {
   );
 
 }
+
+function Stat({ icon, label, value, tone }) {
+  return (
+    <div style={styles.stat}>
+      {icon}
+      <div>
+        <div
+          style={{
+            ...styles.statValue,
+            color: tone === "warn" ? "#E8A33D" : tone === "ok" ? "#57C278" : "#E8ECF1",
+          }}
+        >
+          {value}
+        </div>
+        <div style={styles.statLabel}>{label}</div>
+      </div>
+    </div>
+  );
+}
+
+function LoomMark() {
+  return (
+    <svg width="34" height="34" viewBox="0 0 34 34" fill="none">
+      <rect x="1" y="1" width="32" height="32" rx="8" stroke="#2A3341" strokeWidth="1" />
+      <path d="M7 11 H27 M7 17 H27 M7 23 H27" stroke="#3A4557" strokeWidth="1.4" />
+      <path d="M11 7 V27 M17 7 V27 M23 7 V27" stroke="#E8A33D" strokeWidth="1.4" opacity="0.9" />
+    </svg>
+  );
+}
