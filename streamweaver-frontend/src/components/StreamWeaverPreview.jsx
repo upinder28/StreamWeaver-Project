@@ -11,7 +11,14 @@ import {
   AlertTriangle,
   CheckCircle2,
   HardDrive,
+  Table2,
+  Waypoints,
+  ArrowRight,
+  Copy,
+  Check,
+  Code2,
 } from "lucide-react";
+
 
 const ROW_HEIGHT = 34;
 const HEADER_HEIGHT = 40;
@@ -45,6 +52,29 @@ function colWidthFor(headerText, sampleValues) {
   return Math.min(MAX_COL_WIDTH, Math.max(MIN_COL_WIDTH, longest * 8.2 + 28));
 }
 
+function suggestFieldName(header, index) {
+  const cleaned = (header || "")
+    .trim()
+    .replace(/[^a-zA-Z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "");
+  return cleaned || `field_${index + 1}`;
+}
+
+// Runs a user-typed JS expression against a single sample value, purely for
+// live preview inside this tab. Wrapped in try/catch so a bad expression
+// just shows an error chip instead of breaking the UI.
+function applyTransformPreview(rawValue, transformStr) {
+  if (!transformStr || !transformStr.trim()) return { ok: true, value: rawValue };
+  try {
+    // eslint-disable-next-line no-new-func
+    const fn = new Function("value", `"use strict"; return (${transformStr});`);
+    const result = fn(rawValue);
+    return { ok: true, value: result === undefined || result === null ? "" : String(result) };
+  } catch (e) {
+    return { ok: false, value: e.message || "invalid expression" };
+  }
+}
+
 export default function StreamWeaverPreview() {
   const [status, setStatus] = useState("idle"); // idle | parsing | ready | error
   const [fileName, setFileName] = useState("");
@@ -59,6 +89,10 @@ export default function StreamWeaverPreview() {
   const [dragActive, setDragActive] = useState(false);
   const [gridHeight, setGridHeight] = useState(520);
   const [mountedRange, setMountedRange] = useState({ start: 0, end: 0 });
+
+  const [viewMode, setViewMode] = useState("grid"); // grid | mapping
+  const [mappings, setMappings] = useState([]);
+  const [copied, setCopied] = useState(false);
 
   const fileInputRef = useRef(null);
   const bufferRef = useRef([]);
@@ -82,6 +116,9 @@ export default function StreamWeaverPreview() {
     setErrorRowCount(0);
     setErrorMsg("");
     setMountedRange({ start: 0, end: 0 });
+    setViewMode("grid");
+    setMappings([]);
+    setCopied(false);
     bufferRef.current = [];
     headerRef.current = null;
     rowCountRef.current = 0;
@@ -144,6 +181,16 @@ export default function StreamWeaverPreview() {
           }));
           setColumns(cols);
           setPreviewRows(bufferRef.current);
+          setMappings(
+            cols.map((c, i) => ({
+              key: c.key,
+              sourceIndex: i,
+              source: c.label,
+              destination: suggestFieldName(c.label, i),
+              transform: "",
+              include: true,
+            }))
+          );
           setRowsSeen(rowCountRef.current);
           setErrorRowCount(errCountRef.current);
           setProgress(100);
@@ -173,18 +220,29 @@ export default function StreamWeaverPreview() {
     [beginParse]
   );
 
+  // Fixed: this handler existed in the design but was missing from the file
+  // that was wired up — onDrop was referenced in JSX with nothing behind it.
+  const onDrop = useCallback(
+    (e) => {
+      e.preventDefault();
+      setDragActive(false);
+      handleFiles(e.dataTransfer.files);
+    },
+    [handleFiles]
+  );
+
   const dropTargetActive = status === "idle" || status === "error";
 
   // ---- measure grid viewport so react-window knows its pixel height ------
   useEffect(() => {
-    if (status !== "ready" || !gridWrapRef.current) return;
+    if (status !== "ready" || viewMode !== "grid" || !gridWrapRef.current) return;
     const el = gridWrapRef.current;
     const update = () => setGridHeight(el.clientHeight || 520);
     update();
     const ro = new ResizeObserver(update);
     ro.observe(el);
     return () => ro.disconnect();
-  }, [status]);
+  }, [status, viewMode]);
 
   const totalRows = previewRows.length;
   const totalGridWidth = useMemo(
@@ -221,12 +279,45 @@ export default function StreamWeaverPreview() {
     [previewRows, columns]
   );
 
-
-    useEffect(() => {
+  useEffect(() => {
     return () => {
       if (parserRef.current) parserRef.current.abort();
     };
   }, []);
+
+  // ---- mapping helpers -----------------------------------------------------
+  const updateMapping = useCallback((key, patch) => {
+    setMappings((prev) => prev.map((m) => (m.key === key ? { ...m, ...patch } : m)));
+  }, []);
+
+  const mappedCount = mappings.filter((m) => m.include).length;
+
+  const mappingPayload = useMemo(
+    () =>
+      mappings
+        .filter((m) => m.include)
+        .map((m) => ({
+          source: m.source,
+          sourceIndex: m.sourceIndex,
+          destination: m.destination || suggestFieldName(m.source, m.sourceIndex),
+          transform: m.transform || null,
+        })),
+    [mappings]
+  );
+
+  const copyMappingJSON = useCallback(async () => {
+    const text = JSON.stringify(mappingPayload, null, 2);
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1800);
+    } catch {
+      // Clipboard API can fail in insecure contexts; fail silently, the
+      // button just won't show the "copied" confirmation.
+    }
+  }, [mappingPayload]);
+
+  const firstRow = previewRows[0];
 
   return (
     <div
@@ -264,6 +355,26 @@ export default function StreamWeaverPreview() {
         .sw-ring { transition: border-color 0.18s ease, background 0.18s ease; }
         .sw-ring.drag { border-color: #E8A33D !important; background: rgba(232,163,61,0.05) !important; }
         .sw-hero { animation: sw-fade-up 0.4s ease both; }
+        .sw-map-input {
+          background: #0E1420;
+          border: 1px solid #232B38;
+          color: #E8ECF1;
+          font-family: 'IBM Plex Mono', monospace;
+          font-size: 12.5px;
+          border-radius: 6px;
+          padding: 7px 9px;
+          outline: none;
+          width: 100%;
+        }
+        .sw-map-input:focus { border-color: #E8A33D; }
+        .sw-map-input::placeholder { color: #4A5361; }
+        .sw-seg-btn {
+          display: flex; align-items: center; gap: 6px;
+          background: transparent; border: none; color: #7C8798;
+          font-family: 'Inter', sans-serif; font-size: 12.5px; font-weight: 600;
+          padding: 7px 13px; border-radius: 6px; cursor: pointer;
+        }
+        .sw-seg-btn.active { background: #1B222D; color: #E8ECF1; }
       `}</style>
 
       <WeaveBackdrop active={status === "parsing"} />
@@ -351,51 +462,152 @@ export default function StreamWeaverPreview() {
               value={formatNumber(errorRowCount)}
               tone={errorRowCount > 0 ? "warn" : "ok"}
             />
+
             <div style={styles.statsSpacer} />
-            <div style={styles.previewBadge}>
-              <Gauge size={13} color="#E8A33D" />
-              previewing first {formatNumber(Math.min(totalRows, PREVIEW_LIMIT))} rows in memory
+
+            <div style={styles.segControl}>
+              <button
+                className={`sw-seg-btn${viewMode === "grid" ? " active" : ""}`}
+                onClick={() => setViewMode("grid")}
+              >
+                <Table2 size={14} />
+                Grid
+              </button>
+              <button
+                className={`sw-seg-btn${viewMode === "mapping" ? " active" : ""}`}
+                onClick={() => setViewMode("mapping")}
+              >
+                <Waypoints size={14} />
+                Mapping
+              </button>
             </div>
           </div>
 
-          <div ref={gridWrapRef} style={styles.gridWrap}>
-            <div className="sw-scroll" style={styles.gridScrollX}>
-              <div style={{ width: totalGridWidth }}>
-                <div style={{ ...styles.headerRow, width: totalGridWidth }}>
-                  {columns.map((c) => (
-                    <div key={c.key} style={{ ...styles.headerCell, width: c.width }}>
-                      {c.label}
+          {viewMode === "grid" && (
+            <>
+              <div ref={gridWrapRef} style={styles.gridWrap}>
+                <div className="sw-scroll" style={styles.gridScrollX}>
+                  <div style={{ width: totalGridWidth }}>
+                    <div style={{ ...styles.headerRow, width: totalGridWidth }}>
+                      {columns.map((c) => (
+                        <div key={c.key} style={{ ...styles.headerCell, width: c.width }}>
+                          {c.label}
+                        </div>
+                      ))}
                     </div>
-                  ))}
+                    {gridHeight > HEADER_HEIGHT && (
+                      <List
+                        className="sw-scroll"
+                        height={gridHeight - HEADER_HEIGHT}
+                        width={totalGridWidth}
+                        itemCount={totalRows}
+                        itemSize={ROW_HEIGHT}
+                        overscanCount={OVERSCAN}
+                        onItemsRendered={handleItemsRendered}
+                        style={{ overflowX: "hidden" }}
+                      >
+                        {Row}
+                      </List>
+                    )}
+                  </div>
                 </div>
-                {gridHeight > HEADER_HEIGHT && (
-                  <List
-                    className="sw-scroll"
-                    height={gridHeight - HEADER_HEIGHT}
-                    width={totalGridWidth}
-                    itemCount={totalRows}
-                    itemSize={ROW_HEIGHT}
-                    overscanCount={OVERSCAN}
-                    onItemsRendered={handleItemsRendered}
-                    style={{ overflowX: "hidden" }}
-                  >
-                    {Row}
-                  </List>
-                )}
               </div>
-            </div>
-          </div>
 
-          <div style={styles.footNote}>
-            <FileSpreadsheet size={13} color="#5A6472" />
-            {fileName} · react-window has only {formatNumber(mountedRange.end - mountedRange.start + 1)} of{" "}
-            {formatNumber(totalRows)} preview rows mounted to the DOM right now
-          </div>
+              <div style={styles.footNote}>
+                <FileSpreadsheet size={13} color="#5A6472" />
+                {fileName} · react-window has only {formatNumber(mountedRange.end - mountedRange.start + 1)} of{" "}
+                {formatNumber(totalRows)} preview rows mounted to the DOM right now
+              </div>
+            </>
+          )}
+
+          {viewMode === "mapping" && (
+            <>
+              <div style={styles.mapToolbar}>
+                <div style={styles.mapToolbarText}>
+                  {formatNumber(mappedCount)} of {formatNumber(columns.length)} columns will be sent
+                </div>
+                <button style={styles.copyBtn} onClick={copyMappingJSON}>
+                  {copied ? <Check size={14} color="#57C278" /> : <Copy size={14} />}
+                  {copied ? "Copied" : "Copy mapping JSON"}
+                </button>
+              </div>
+
+              <div className="sw-scroll" style={styles.mapWrap}>
+                <div style={styles.mapHeaderRow}>
+                  <div style={{ ...styles.mapHeadCell, width: 34 }}></div>
+                  <div style={{ ...styles.mapHeadCell, width: 180 }}>Source column</div>
+                  <div style={{ ...styles.mapHeadCell, width: 24 }}></div>
+                  <div style={{ ...styles.mapHeadCell, width: 190 }}>Destination field</div>
+                  <div style={{ ...styles.mapHeadCell, flex: 1, minWidth: 220 }}>Transform (optional JS)</div>
+                  <div style={{ ...styles.mapHeadCell, width: 170 }}>Preview</div>
+                </div>
+
+                {mappings.map((m) => {
+                  const rawSample = firstRow ? firstRow[m.sourceIndex] : "";
+                  const preview = applyTransformPreview(rawSample, m.transform);
+                  return (
+                    <div
+                      key={m.key}
+                      style={{ ...styles.mapRow, opacity: m.include ? 1 : 0.4 }}
+                    >
+                      <div style={{ width: 34, display: "flex", alignItems: "center" }}>
+                        <input
+                          type="checkbox"
+                          checked={m.include}
+                          onChange={(e) => updateMapping(m.key, { include: e.target.checked })}
+                          style={{ width: 16, height: 16, accentColor: "#E8A33D", cursor: "pointer" }}
+                        />
+                      </div>
+                      <div style={{ width: 180, ...styles.mapSourceLabel }} title={m.source}>
+                        {m.source}
+                      </div>
+                      <div style={{ width: 24, display: "flex", justifyContent: "center" }}>
+                        <ArrowRight size={14} color="#4A5361" />
+                      </div>
+                      <div style={{ width: 190 }}>
+                        <input
+                          className="sw-map-input"
+                          value={m.destination}
+                          disabled={!m.include}
+                          onChange={(e) => updateMapping(m.key, { destination: e.target.value })}
+                          placeholder="destination_field"
+                        />
+                      </div>
+                      <div style={{ flex: 1, minWidth: 220, position: "relative" }}>
+                        <Code2
+                          size={13}
+                          color="#4A5361"
+                          style={{ position: "absolute", left: 9, top: 9.5, pointerEvents: "none" }}
+                        />
+                        <input
+                          className="sw-map-input"
+                          style={{ paddingLeft: 28, fontStyle: m.transform ? "normal" : "italic" }}
+                          value={m.transform}
+                          disabled={!m.include}
+                          onChange={(e) => updateMapping(m.key, { transform: e.target.value })}
+                          placeholder="e.g. value.toUpperCase()"
+                        />
+                      </div>
+                      <div style={{ width: 170, ...styles.mapPreviewCell, color: preview.ok ? "#7C8798" : "#E85D5D" }}>
+                        {String(preview.value)}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+
+              <div style={styles.footNote}>
+                <Waypoints size={13} color="#5A6472" />
+                Preview only — transforms run safely against the full file on the backend in Week 3, not here in the
+                browser.
+              </div>
+            </>
+          )}
         </div>
       )}
     </div>
   );
-
 }
 
 function Stat({ icon, label, value, tone }) {
@@ -414,56 +626,5 @@ function Stat({ icon, label, value, tone }) {
         <div style={styles.statLabel}>{label}</div>
       </div>
     </div>
-  );
-}
-
-function LoomMark() {
-  return (
-    <svg width="34" height="34" viewBox="0 0 34 34" fill="none">
-      <rect x="1" y="1" width="32" height="32" rx="8" stroke="#2A3341" strokeWidth="1" />
-      <path d="M7 11 H27 M7 17 H27 M7 23 H27" stroke="#3A4557" strokeWidth="1.4" />
-      <path d="M11 7 V27 M17 7 V27 M23 7 V27" stroke="#E8A33D" strokeWidth="1.4" opacity="0.9" />
-    </svg>
-  );
-}
-
-function WeaveBackdrop({ active }) {
-  const lines = [];
-  for (let i = 0; i < 22; i++) {
-    lines.push(
-      <line
-        key={`h${i}`}
-        className={active ? "sw-thread-line" : undefined}
-        x1="0"
-        y1={i * 34}
-        x2="1600"
-        y2={i * 34}
-        stroke="#141B26"
-        strokeWidth="1"
-      />
-    );
-  }
-  
-    for (let i = 0; i < 46; i++) {
-    lines.push(
-      <line key={`v${i}`} x1={i * 34} y1="0" x2={i * 34} y2="760" stroke="#10161F" strokeWidth="1" />
-    );
-  }
-  return (
-    <svg
-      width="100%"
-      height="100%"
-      viewBox="0 0 1600 760"
-      preserveAspectRatio="none"
-      style={{
-        position: "absolute",
-        inset: 0,
-        opacity: 0.55,
-        pointerEvents: "none",
-        zIndex: 0,
-      }}
-    >
-      {lines}
-    </svg>
   );
 }
