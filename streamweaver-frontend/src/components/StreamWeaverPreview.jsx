@@ -609,3 +609,22 @@ export default function StreamWeaverPreview() {
     </div>
   );
 }
+
+function Stat({ icon, label, value, tone }) {
+  return (
+    <div style={styles.stat}>
+      {icon}
+      <div>
+        <div
+          style={{
+            ...styles.statValue,
+            color: tone === "warn" ? "#E8A33D" : tone === "ok" ? "#57C278" : "#E8ECF1",
+          }}
+        >
+          {value}
+        </div>
+        <div style={styles.statLabel}>{label}</div>
+      </div>
+    </div>
+  );
+}
