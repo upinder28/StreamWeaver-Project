@@ -1,8 +1,12 @@
 const { Transform } = require("stream");
 
 class CSVTransform extends Transform {
-  constructor(headers) {
+  constructor(headers = []) {
     super({ objectMode: true });
+    this.headers = headers;
+  }
+
+  setHeaders(headers) {
     this.headers = headers;
   }
 
