@@ -638,3 +638,44 @@ function LoomMark() {
     </svg>
   );
 }
+
+
+function WeaveBackdrop({ active }) {
+  const lines = [];
+  for (let i = 0; i < 22; i++) {
+    lines.push(
+      <line
+        key={`h${i}`}
+        className={active ? "sw-thread-line" : undefined}
+        x1="0"
+        y1={i * 34}
+        x2="1600"
+        y2={i * 34}
+        stroke="#141B26"
+        strokeWidth="1"
+      />
+    );
+  }
+  for (let i = 0; i < 46; i++) {
+    lines.push(
+      <line key={`v${i}`} x1={i * 34} y1="0" x2={i * 34} y2="760" stroke="#10161F" strokeWidth="1" />
+    );
+  }
+  return (
+    <svg
+      width="100%"
+      height="100%"
+      viewBox="0 0 1600 760"
+      preserveAspectRatio="none"
+      style={{
+        position: "absolute",
+        inset: 0,
+        opacity: 0.55,
+        pointerEvents: "none",
+        zIndex: 0,
+      }}
+    >
+      {lines}
+    </svg>
+  );
+}
