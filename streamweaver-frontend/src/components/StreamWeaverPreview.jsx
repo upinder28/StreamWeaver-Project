@@ -23,23 +23,8 @@ import {
   PartyPopper,
 } from "lucide-react";
 
-// Change this if your backend runs somewhere other than localhost:3000.
 const UPLOAD_ENDPOINT = "http://localhost:3000/upload";
 
-// ---------------------------------------------------------------------------
-// StreamWeaver — Week 1 + Week 2 (frontend)
-//
-// Week 1: multipart streaming preview (client-side parse in chunks, only the
-// first 1,000 rows ever held in memory) + a react-window virtualized grid.
-//
-// Week 2: the Mapping UI — map each source CSV column to a destination field
-// name, with an optional inline JS transform expression per column. This
-// only prepares and previews the mapping in the browser; it does NOT execute
-// user code against the real dataset or talk to a backend yet. Running that
-// transform safely against the full file is Week 3's job (isolated-vm on the
-// server). The "Copy mapping JSON" button here produces exactly the payload
-// shape you'll POST alongside the upload once that's wired up.
-// ---------------------------------------------------------------------------
 
 const ROW_HEIGHT = 34;
 const HEADER_HEIGHT = 40;
@@ -97,7 +82,7 @@ function applyTransformPreview(rawValue, transformStr) {
 }
 
 export default function StreamWeaverPreview() {
-  const [status, setStatus] = useState("idle"); // idle | parsing | ready | error
+  const [status, setStatus] = useState("idle"); 
   const [fileName, setFileName] = useState("");
   const [fileSize, setFileSize] = useState(0);
   const [progress, setProgress] = useState(0);
@@ -111,12 +96,12 @@ export default function StreamWeaverPreview() {
   const [gridHeight, setGridHeight] = useState(520);
   const [mountedRange, setMountedRange] = useState({ start: 0, end: 0 });
 
-  const [viewMode, setViewMode] = useState("grid"); // grid | mapping
+  const [viewMode, setViewMode] = useState("grid"); 
   const [mappings, setMappings] = useState([]);
   const [copied, setCopied] = useState(false);
 
   // Real backend upload — separate from the client-side preview above.
-  // sendState: idle | sending | done | error
+  
   const [sendState, setSendState] = useState("idle");
   const [sendProgress, setSendProgress] = useState({ rows: 0, progress: 0, rate: 0 });
   const [sendError, setSendError] = useState("");
@@ -253,8 +238,7 @@ export default function StreamWeaverPreview() {
     [beginParse]
   );
 
-  // Fixed: this handler existed in the design but was missing from the file
-  // that was wired up — onDrop was referenced in JSX with nothing behind it.
+
   const onDrop = useCallback(
     (e) => {
       e.preventDefault();
@@ -350,12 +334,6 @@ export default function StreamWeaverPreview() {
     }
   }, [mappingPayload]);
 
-  // ---- real backend upload ------------------------------------------------
-  // EventSource can't send a POST body or custom headers, and the backend's
-  // /upload route needs both (the file itself, plus the mapping rules as a
-  // header) — so this reads the SSE-formatted response manually off a fetch
-  // stream instead. This is what actually exercises busboy -> CSVTransform ->
-  // bulkWrite on the server; everything above this point is browser-only.
   const startRealUpload = useCallback(async () => {
     const file = rawFileRef.current;
     if (!file) {
@@ -773,8 +751,6 @@ export default function StreamWeaverPreview() {
 
               <div style={styles.footNote}>
                 <Waypoints size={13} color="#5A6472" />
-                Preview only — transforms run safely against the full file on the backend in Week 3, not here in the
-                browser.
               </div>
             </>
           )}
