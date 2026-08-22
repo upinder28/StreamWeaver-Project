@@ -42,33 +42,35 @@ router.post("/", (req, res) => {
 
   bb.on("file", (field, stream) => {
     const startTime = Date.now();
-    let isFirstRow = true;
 
     stream.on("data", (chunk) => { bytesRead += chunk.length; });
 
     const csvParser = csv();
+    const transformer = new CSVTransform([], mappingRules);
 
-    csvParser.on("headers", (headerList) => { headers = headerList; });
+    csvParser.on("headers", (headerList) => {
+      headers = headerList;
+      transformer.setHeaders(headerList);
+    });
 
-    const transformer = new CSVTransform(headers, mappingRules);
-
-    csvParser.on("data", (row) => {
-      if (isFirstRow) {
-        transformer.setHeaders(Object.keys(row));
-        isFirstRow = false;
-      }
-      transformer.write(Object.values(row));
+    // csv-parser emits parsed row objects on 'data' — forward them into the transform manually
+    csvParser.on("data", (rowObj) => {
+      // rowObj is { columnName: value, ... } — convert to array indexed by header order
+      const rowArr = headers.map((h) => rowObj[h] !== undefined ? rowObj[h] : "");
+      transformer.write(rowArr);
     });
 
     csvParser.on("end", () => transformer.end());
+    csvParser.on("error", (err) => { sendProgress({ error: err.message }); res.end(); });
 
-    transformer.on("data", (jsonObj) => {
+    transformer.on("data", async (jsonObj) => {
       rows++;
       batch.push(jsonObj);
 
       if (batch.length >= BATCH_SIZE) {
-        csvParser.pause();
-        flushBatch().then(() => csvParser.resume());
+        transformer.pause();
+        await flushBatch();
+        transformer.resume();
       }
 
       if (rows % 500 === 0) {
