@@ -17,8 +17,29 @@ import {
   Copy,
   Check,
   Code2,
+  Send,
+  Loader2,
+  ServerCrash,
+  PartyPopper,
 } from "lucide-react";
 
+// Change this if your backend runs somewhere other than localhost:3000.
+const UPLOAD_ENDPOINT = "http://localhost:3000/upload";
+
+// ---------------------------------------------------------------------------
+// StreamWeaver — Week 1 + Week 2 (frontend)
+//
+// Week 1: multipart streaming preview (client-side parse in chunks, only the
+// first 1,000 rows ever held in memory) + a react-window virtualized grid.
+//
+// Week 2: the Mapping UI — map each source CSV column to a destination field
+// name, with an optional inline JS transform expression per column. This
+// only prepares and previews the mapping in the browser; it does NOT execute
+// user code against the real dataset or talk to a backend yet. Running that
+// transform safely against the full file is Week 3's job (isolated-vm on the
+// server). The "Copy mapping JSON" button here produces exactly the payload
+// shape you'll POST alongside the upload once that's wired up.
+// ---------------------------------------------------------------------------
 
 const ROW_HEIGHT = 34;
 const HEADER_HEIGHT = 40;
@@ -94,7 +115,14 @@ export default function StreamWeaverPreview() {
   const [mappings, setMappings] = useState([]);
   const [copied, setCopied] = useState(false);
 
+  // Real backend upload — separate from the client-side preview above.
+  // sendState: idle | sending | done | error
+  const [sendState, setSendState] = useState("idle");
+  const [sendProgress, setSendProgress] = useState({ rows: 0, progress: 0, rate: 0 });
+  const [sendError, setSendError] = useState("");
+
   const fileInputRef = useRef(null);
+  const rawFileRef = useRef(null); // holds the actual File object for the real upload
   const bufferRef = useRef([]);
   const headerRef = useRef(null);
   const rowCountRef = useRef(0);
@@ -119,16 +147,21 @@ export default function StreamWeaverPreview() {
     setViewMode("grid");
     setMappings([]);
     setCopied(false);
+    setSendState("idle");
+    setSendProgress({ rows: 0, progress: 0, rate: 0 });
+    setSendError("");
     bufferRef.current = [];
     headerRef.current = null;
     rowCountRef.current = 0;
     errCountRef.current = 0;
+    rawFileRef.current = null;
     if (fileInputRef.current) fileInputRef.current.value = "";
   }, []);
 
   const beginParse = useCallback(
     (file) => {
       reset();
+      rawFileRef.current = file;
       setStatus("parsing");
       setFileName(file.name);
       setFileSize(file.size);
@@ -317,6 +350,88 @@ export default function StreamWeaverPreview() {
     }
   }, [mappingPayload]);
 
+  // ---- real backend upload ------------------------------------------------
+  // EventSource can't send a POST body or custom headers, and the backend's
+  // /upload route needs both (the file itself, plus the mapping rules as a
+  // header) — so this reads the SSE-formatted response manually off a fetch
+  // stream instead. This is what actually exercises busboy -> CSVTransform ->
+  // bulkWrite on the server; everything above this point is browser-only.
+  const startRealUpload = useCallback(async () => {
+    const file = rawFileRef.current;
+    if (!file) {
+      setSendState("error");
+      setSendError("No file reference available — try reselecting the file.");
+      return;
+    }
+
+    setSendState("sending");
+    setSendProgress({ rows: 0, progress: 0, rate: 0 });
+    setSendError("");
+
+    try {
+      const formData = new FormData();
+      formData.append("file", file, file.name);
+
+      const response = await fetch(UPLOAD_ENDPOINT, {
+        method: "POST",
+        headers: {
+          "x-file-size": String(file.size),
+          "x-mapping-rules": encodeURIComponent(JSON.stringify(mappingPayload)),
+        },
+        body: formData,
+      });
+
+      if (!response.ok || !response.body) {
+        throw new Error(`Server responded ${response.status}`);
+      }
+
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+
+        const events = buffer.split("\n\n");
+        buffer = events.pop(); // last chunk may be incomplete, keep it for next read
+
+        for (const evt of events) {
+          const line = evt.trim();
+          if (!line.startsWith("data:")) continue;
+          let payload;
+          try {
+            payload = JSON.parse(line.slice(5).trim());
+          } catch {
+            continue;
+          }
+          if (payload.error) {
+            setSendState("error");
+            setSendError(payload.error);
+            return;
+          }
+          if (payload.warning) continue; // bulkWrite hiccup on one batch — not fatal
+          setSendProgress({
+            rows: payload.rows || 0,
+            progress: payload.progress || 0,
+            rate: payload.rate || 0,
+          });
+          if (payload.done) setSendState("done");
+        }
+      }
+
+      setSendState((s) => (s === "sending" ? "done" : s));
+    } catch (err) {
+      setSendState("error");
+      setSendError(
+        err && err.message
+          ? `${err.message} — is the backend running at ${UPLOAD_ENDPOINT}?`
+          : "Upload failed."
+      );
+    }
+  }, [mappingPayload]);
+
   const firstRow = previewRows[0];
 
   return (
@@ -352,6 +467,8 @@ export default function StreamWeaverPreview() {
           to { opacity: 1; transform: translateY(0); }
         }
         .sw-thread-line { stroke-dasharray: 6 6; animation: sw-thread 1.4s linear infinite; }
+        @keyframes sw-spin { to { transform: rotate(360deg); } }
+        .sw-spin { animation: sw-spin 0.9s linear infinite; }
         .sw-ring { transition: border-color 0.18s ease, background 0.18s ease; }
         .sw-ring.drag { border-color: #E8A33D !important; background: rgba(232,163,61,0.05) !important; }
         .sw-hero { animation: sw-fade-up 0.4s ease both; }
@@ -527,11 +644,68 @@ export default function StreamWeaverPreview() {
                 <div style={styles.mapToolbarText}>
                   {formatNumber(mappedCount)} of {formatNumber(columns.length)} columns will be sent
                 </div>
-                <button style={styles.copyBtn} onClick={copyMappingJSON}>
-                  {copied ? <Check size={14} color="#57C278" /> : <Copy size={14} />}
-                  {copied ? "Copied" : "Copy mapping JSON"}
-                </button>
+                <div style={{ display: "flex", gap: 10 }}>
+                  <button style={styles.copyBtn} onClick={copyMappingJSON}>
+                    {copied ? <Check size={14} color="#57C278" /> : <Copy size={14} />}
+                    {copied ? "Copied" : "Copy mapping JSON"}
+                  </button>
+                  <button
+                    style={{
+                      ...styles.sendBtn,
+                      opacity: sendState === "sending" || mappedCount === 0 ? 0.6 : 1,
+                      cursor: sendState === "sending" || mappedCount === 0 ? "default" : "pointer",
+                    }}
+                    onClick={startRealUpload}
+                    disabled={sendState === "sending" || mappedCount === 0}
+                  >
+                    {sendState === "sending" ? (
+                      <Loader2 size={14} className="sw-spin" />
+                    ) : (
+                      <Send size={14} />
+                    )}
+                    {sendState === "sending" ? "Streaming to server…" : "Send full file to server"}
+                  </button>
+                </div>
               </div>
+
+              {sendState !== "idle" && (
+                <div style={styles.sendPanel}>
+                  {sendState === "sending" && (
+                    <>
+                      <div style={styles.sendRow}>
+                        <Loader2 size={15} color="#E8A33D" className="sw-spin" />
+                        <span style={styles.sendTitle}>
+                          Streaming the full file through busboy → CSVTransform → MongoDB…
+                        </span>
+                      </div>
+                      <div style={styles.progressTrack2}>
+                        <div style={{ ...styles.progressFill, width: `${sendProgress.progress}%` }} />
+                      </div>
+                      <div style={styles.parsingStats}>
+                        <span>{formatNumber(sendProgress.progress)}% streamed</span>
+                        <span>·</span>
+                        <span>{formatNumber(sendProgress.rows)} rows inserted</span>
+                        <span>·</span>
+                        <span>{formatNumber(sendProgress.rate)} rows/sec</span>
+                      </div>
+                    </>
+                  )}
+                  {sendState === "done" && (
+                    <div style={styles.sendRow}>
+                      <PartyPopper size={16} color="#57C278" />
+                      <span style={styles.sendTitle}>
+                        Done — {formatNumber(sendProgress.rows)} rows bulk-written to MongoDB.
+                      </span>
+                    </div>
+                  )}
+                  {sendState === "error" && (
+                    <div style={styles.sendRow}>
+                      <ServerCrash size={16} color="#E85D5D" />
+                      <span style={{ ...styles.sendTitle, color: "#E85D5D" }}>{sendError}</span>
+                    </div>
+                  )}
+                </div>
+              )}
 
               <div className="sw-scroll" style={styles.mapWrap}>
                 <div style={styles.mapHeaderRow}>
@@ -638,7 +812,6 @@ function LoomMark() {
     </svg>
   );
 }
-
 
 function WeaveBackdrop({ active }) {
   const lines = [];
@@ -909,6 +1082,37 @@ const styles = {
     padding: "8px 14px",
     borderRadius: 7,
     cursor: "pointer",
+  },
+  sendBtn: {
+    display: "flex",
+    alignItems: "center",
+    gap: 7,
+    background: "#E8A33D",
+    color: "#241A08",
+    border: "none",
+    fontFamily: "'Inter', sans-serif",
+    fontSize: 12.5,
+    fontWeight: 700,
+    padding: "8px 14px",
+    borderRadius: 7,
+  },
+  sendPanel: {
+    border: "1px solid #1B222D",
+    background: "#0E1420",
+    borderRadius: 10,
+    padding: "14px 16px",
+    marginBottom: 12,
+    flexShrink: 0,
+  },
+  sendRow: { display: "flex", alignItems: "center", gap: 9 },
+  sendTitle: { fontSize: 13, color: "#E8ECF1", fontWeight: 500 },
+  progressTrack2: {
+    width: "100%",
+    height: 6,
+    background: "#1B222D",
+    borderRadius: 4,
+    marginTop: 12,
+    overflow: "hidden",
   },
   mapWrap: {
     flex: 1,
