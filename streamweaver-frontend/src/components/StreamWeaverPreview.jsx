@@ -592,7 +592,7 @@ export default function StreamWeaverPreview() {
 
           {viewMode === "grid" && (
             <>
-              <div ref={gridWrapRef} style={{ ...styles.gridWrap, maxWidth: totalGridWidth + 24 }}>
+              <div ref={gridWrapRef} style={{ ...styles.gridWrap, maxWidth: totalGridWidth + 24, margin: "0 auto" }}>
                 <div className="sw-scroll" style={styles.gridScrollX}>
                   <div style={{ width: totalGridWidth }}>
                     <div style={{ ...styles.headerRow, width: totalGridWidth }}>
