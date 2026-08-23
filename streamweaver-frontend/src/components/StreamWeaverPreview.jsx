@@ -522,7 +522,19 @@ export default function StreamWeaverPreview() {
 
       {status === "parsing" && (
         <div style={styles.heroWrap}>
-          <div className="sw-hero" style={styles.hero}>
+          {/* <div className="sw-hero" style={styles.hero}> */}
+          <div
+            className="sw-hero"
+            style={styles.hero}
+            role="button"
+            tabIndex={0}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" || e.key === " ") {
+                e.preventDefault();
+                fileInputRef.current && fileInputRef.current.click();
+              }
+            }}
+          >
             <div style={styles.dropTitle}>Weaving through {fileName}…</div>
             <div style={styles.dropSub}>{formatBytes(fileSize)} total</div>
             <div style={styles.progressTrack}>
