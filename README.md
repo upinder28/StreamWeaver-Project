@@ -1,13 +1,14 @@
-StreamWeaver: High-Throughput No-Code ETL Pipeline
+# StreamWeaver: High-Throughput No-Code ETL Pipeline
 
 ![StreamWeaver](https://img.shields.io/badge/StreamWeaver-v1.0.0-blue)
 ![Node.js](https://img.shields.io/badge/Node.js-18+-green)
 ![React](https://img.shields.io/badge/React-18.2+-blue)
 ![Vite](https://img.shields.io/badge/Vite-4.4+-purple)
+![MongoDB](https://img.shields.io/badge/MongoDB-8+-brightgreen)
 
-. Project Overview
+## Project Overview
 
-"StreamWeaver" is a high-throughput, no-code ETL pipeline designed to process large CSV datasets efficiently without requiring users to write code.
+**StreamWeaver** is a high-throughput, no-code ETL pipeline designed to process large CSV datasets efficiently without requiring users to write code.
 
 The project focuses on:
 
@@ -15,50 +16,51 @@ The project focuses on:
 * Streaming large file uploads
 * Real-time processing statistics
 * Virtualized data preview
-* Data transformation and mapping
-* Scalable backend processing
+* Visual data transformation and column mapping
+* Streaming database writes via MongoDB
 
 The development is being completed incrementally through a week-wise implementation plan.
 
-
-. Problem Statement
+## Problem Statement
 
 Uploading and processing massive datasets such as multi-GB CSV files can cause browser freezing or Node.js heap memory issues when the entire file is loaded into memory.
 
-StreamWeaver aims to solve this problem by using **stream-based processing** and **virtualized visualization**, allowing users to work with large datasets without loading the entire file into memory at once.
+StreamWeaver solves this using **stream-based processing** end to end — chunked parsing in the browser, a piped Node.js stream pipeline on the server, and batched writes into MongoDB — so users can work with large datasets without ever loading a full file into memory, on either side.
 
+## Current Architecture
 
+```
+                         StreamWeaver
+                              │
+             ┌────────────────┴────────────────┐
+             │                                  │
+         Frontend                            Backend
+       React + Vite                    Node.js + Express
+             │                                  │
+        Papa Parse                           Busboy
+             │                                  │
+    1,000-row Preview                      CSV Parser
+             │                                  │
+      react-window                    CSVTransform (stream.Transform)
+             │                                  │
+  Virtualized Grid                    Batched bulkWrite → MongoDB
+             │                                  │
+      Mapping UI  ─────── multipart POST ───────┘
+     (source → dest,           + SSE progress
+      transform, JSON)
+```
 
-. Current Architecture
+## Development Progress
 
+### Week 1 — Streaming Upload & Virtualized Preview
 
-                    StreamWeaver
-                         │
-          ┌──────────────┴──────────────┐
-          │                             │
-      Frontend                       Backend
-     React + Vite                Node.js + Express
-          │                             │
-      Papa Parse                     Busboy
-          │                             │
-   1,000-row Preview               CSV Parser
-          │                             │
-   react-window                 Streaming Processing
-          │
-   Virtualized Grid
-
-
-. Development Progress
-
-# Week 1 — Streaming Upload & Virtualized Preview
-
-. Backend — Completed ✅
+#### Backend — Completed ✅
 
 The backend implements multipart file processing using **Busboy**.
 
 Instead of loading the complete uploaded file into memory, the incoming request is piped into Busboy and the uploaded file stream is passed directly to the CSV parser.
 
-
+```
 Client
    ↓
 Multipart Upload
@@ -68,9 +70,9 @@ Busboy
 CSV Stream Parser
    ↓
 Row-by-Row Processing
+```
 
-
-# Week 1 Backend Features
+**Week 1 Backend Features**
 
 * ✅ Express.js backend
 * ✅ Busboy multipart file handling
@@ -80,15 +82,13 @@ Row-by-Row Processing
 * ✅ Total row counting
 * ✅ Avoids loading the complete uploaded file into memory
 
-The current `/upload` endpoint uses `req.pipe(bb)` and streams the uploaded file through `csv-parser`.
+The `/upload` endpoint uses `req.pipe(bb)` and streams the uploaded file through `csv-parser`.
 
-
-
-# Week 1 — Frontend — Completed ✅
+#### Frontend — Completed ✅
 
 The frontend provides an interactive CSV preview interface.
 
-# Features
+**Features**
 
 * ✅ CSV file selection
 * ✅ Drag-and-drop upload interface
@@ -103,134 +103,132 @@ The frontend provides an interactive CSV preview interface.
 * ✅ Virtualized grid using `react-window`
 * ✅ Dynamic column sizing
 * ✅ Only visible preview rows are mounted in the DOM
-* ✅ Responsive preview area
+* ✅ Responsive, full-viewport layout
 * ✅ Animated StreamWeaver background
 
-The current implementation limits the preview buffer to `1000` rows and uses `react-window` to virtualize the displayed rows.
+The preview buffer is limited to `1000` rows and `react-window` (`FixedSizeList`) virtualizes the displayed rows so only rows in view are ever mounted to the DOM.
 
+### Week 2 — ETL Transformation & Data Mapping
 
+#### Backend — Completed ✅
 
-#  Week 2 — ETL Transformation & Data Mapping
+Week 2 introduces a Node.js `Transform` stream sitting between CSV parsing and the database write step.
 
-# Week 2 Objective
-
-The goal of Week 2 is to move from simple streaming/preview functionality toward an actual "ETL transformation workflow".
-
-### Backend — Planned / In Progress 
-
-Week 2 backend development will introduce Node.js Transform streams.
-
-The intended pipeline is:
-
-
+```
 Uploaded File
      ↓
 Busboy
      ↓
 CSV Parser
      ↓
-Transform Stream
+CSVTransform (stream.Transform, object mode)
      ↓
-Processed Data
+Batched bulkWrite
+     ↓
+MongoDB
+```
 
+**Backend Features**
 
-# Planned Backend Features
+* ✅ Custom `stream.Transform` subclass (`CSVTransform.js`) converting each row to a JSON object on the fly
+* ✅ Applies column-mapping rules (source → destination field, optional transform expression) received from the frontend
+* ✅ Falls back to identity mapping when no mapping rules are supplied
+* ✅ Batches processed rows and writes via `Record.bulkWrite()` instead of one insert per row
+* ✅ Mongoose connection (`db.js`) and schema (`models/Record.js`)
+* ✅ Live progress (rows processed, % streamed, rows/sec) pushed to the client via Server-Sent Events
+* ⚠️ Transform expressions currently run via plain `new Function(...)`, without process isolation — **not yet sandboxed**. Secure execution via `isolated-vm` is planned for Week 3, not yet implemented.
 
-1. Node.js `Transform` stream
-2. Process rows without storing the complete dataset
-3. Apply transformation rules while streaming
-4. Support field-level transformations
-5. Prepare transformed records for database insertion
-6. Maintain low memory usage during transformation
+#### Frontend — Completed ✅
 
+A visual interface for mapping source columns to destination fields, plus real integration with the backend above.
 
-
-# Week 2 — Frontend Mapping UI
-
-The Week 2 frontend will provide a visual interface for mapping source columns to destination columns.
-
-# Planned Workflow
-
-
+```
 CSV Columns
      ↓
 Mapping Interface
      ↓
-Select Source Column
+Edit Destination Field  +  Optional JS Transform (live preview)
      ↓
-Select Destination Column
+Include / Exclude Columns
      ↓
-Apply Transformation
+Send Full File to Server (multipart POST + mapping rules header)
      ↓
-Preview Result
+Live Server-Reported Progress (via SSE)
+```
 
+**Features**
 
-# Planned Features
+* ✅ Grid / Mapping toggle view
+* ✅ Every source column listed with an editable, auto-suggested destination field name
+* ✅ Optional inline JavaScript transform per column, with a live preview evaluated against a sample row in the browser
+* ✅ Per-column include/exclude checkbox, with a running "N of M columns will be sent" count
+* ✅ "Copy mapping JSON" — outputs the exact payload shape sent to the backend
+* ✅ "Send full file to server" — POSTs the real file as `multipart/form-data` with mapping rules attached as a header, then reads the response as a Server-Sent Events stream (via the Fetch streaming API, since `EventSource` cannot send a POST body or custom headers) to render live, server-reported progress
 
-1. Display uploaded CSV columns
-2. Source-column selection
-3. Destination-column selection
-4. Visual column mapping
-5. Mapping validation
-6. Transformation preview
-7. Prepare mapping rules for backend processing
+### Week 1 & Week 2 Status
 
+| Feature                                     |     Week | Status                        |
+| -------------------------------------------- | -------: | ------------------------------ |
+| Express backend setup                        |   Week 1 | ✅ Completed                    |
+| Large-file streaming with Busboy              |   Week 1 | ✅ Completed                    |
+| CSV parsing and row-by-row processing         |   Week 1 | ✅ Completed                    |
+| CSV upload interface                          |   Week 1 | ✅ Completed                    |
+| Preview of the first 1,000 rows               |   Week 1 | ✅ Completed                    |
+| Virtual scrolling with `react-window`         |   Week 1 | ✅ Completed                    |
+| Processing statistics and progress tracking   |   Week 1 | ✅ Completed                    |
+| Malformed-row detection                       |   Week 1 | ✅ Completed                    |
+| Node.js Transform streams                     |   Week 2 | ✅ Completed                    |
+| Streaming data transformations                |   Week 2 | ✅ Completed                    |
+| Visual column mapping                         |   Week 2 | ✅ Completed                    |
+| Transformation preview                        |   Week 2 | ✅ Completed                    |
+| MongoDB batch operations (`bulkWrite`)        |   Week 2 | ✅ Completed                    |
+| Frontend ↔ backend upload wired end to end    |   Week 2 | ✅ Completed                    |
+| Live progress via Server-Sent Events          |   Week 2 | ✅ Completed                    |
+| Real-data pipeline re-verification            |   Week 2 | 🚧 In Progress *(see Known Issues)* |
+| Secure transformation sandbox (`isolated-vm`) | Upcoming | ⏳ Planned — Week 3             |
+| WebSocket-based live progress                 | Upcoming | ⏳ Planned — currently SSE, not WebSockets |
+| 2GB file memory benchmarking                  | Upcoming | ⏳ Planned — endpoint ready, audit not yet run |
 
-# Week 1 & Week 2 Status
+## Known Issues
 
-| Feature                                     |     Week | Status         |
-| ------------------------------------------- | -------: | -------------- |
-| Express backend setup                       |   Week 1 | ✅ Completed    |
-| Large-file streaming with Busboy            |   Week 1 | ✅ Completed    |
-| CSV parsing and row-by-row processing       |   Week 1 | ✅ Completed    |
-| CSV upload interface                        |   Week 1 | ✅ Completed    |
-| Preview of the first 1,000 rows             |   Week 1 | ✅ Completed    |
-| Virtual scrolling with React                |   Week 1 | ✅ Completed    |
-| Processing statistics and progress tracking |   Week 1 | ✅ Completed    |
-| Malformed-row detection                     |   Week 1 | ✅ Completed    |
-| Node.js Transform streams                   |   Week 2 | 🚧 In Progress |
-| Streaming data transformations              |   Week 2 | 🚧 In Progress |
-| Visual column mapping                       |   Week 2 | 🚧 In Progress |
-| Transformation preview                      |   Week 2 | 🚧 In Progress |
-| MongoDB batch operations (`bulkWrite`)      | Upcoming | ⏳ Planned      |
-| Secure transformation sandbox               | Upcoming | ⏳ Planned      |
-| WebSocket-based live progress               | Upcoming | ⏳ Planned      |
+* **Upload pipeline re-verification in progress.** An earlier version of the upload pipeline completed without error but processed 0 rows regardless of file size. The root cause was traced to `streamweaver-backend/routes/upload.js` — the CSV-parser-to-Transform-stream wiring — and the code has since been revised (explicit header-based row mapping, corrected batch pause/resume targeting the transform stream, added error handling on the CSV parser). This revision has not yet been fully re-tested against a large real-world file with the memory-audit checkpoint, so that audit is currently pending.
+* **Transform sandboxing is not yet secure.** User-supplied transform expressions run via `new Function(...)` with no isolation. This is acceptable for the current development stage — real sandboxing via `isolated-vm` is a Week 3 deliverable — but should not be treated as production-safe yet.
 
+## Technology Stack
 
-
-
-# Technology Stack
-
-# Backend
+### Backend
 
 * Node.js 18+
 * Express.js
 * Busboy
 * csv-parser
+* Mongoose + MongoDB
+* CORS
 * Nodemon
 
-The current backend dependencies include Express, Busboy, csv-parser, CORS and Nodemon.
-
-# Frontend
+### Frontend
 
 * React
 * Vite
 * Papa Parse
-* react-window
+* react-window (`1.8.10`)
 * Lucide React
 
+## Project Structure
 
-
-# Project Structure
-
-
+```
 StreamWeaver-Project/
 │
 ├── streamweaver-backend/
 │   ├── server.js
+│   ├── db.js
 │   ├── package.json
-│   └── routes/
-│       └── upload.js
+│   ├── models/
+│   │   └── Record.js
+│   ├── routes/
+│   │   └── upload.js
+│   └── transforms/
+│       └── CSVTransform.js
 │
 ├── streamweaver-frontend/
 │   ├── src/
@@ -246,160 +244,146 @@ StreamWeaver-Project/
 │   └── vite.config.js
 │
 └── README.md
+```
 
+## Installation & Setup
 
-# Installation & Setup
-
-# Prerequisites
+### Prerequisites
 
 * Node.js 18+
 * npm
+* MongoDB running locally (or update `db.js` to point at your own connection string)
 * Modern web browser
 
+### Backend Setup
 
-# Backend Setup
-
+```
 cd streamweaver-backend
 npm install
 npm run dev
-
+```
 
 The backend runs on:
 
+```
 http://localhost:3000
-
+```
 
 For production:
 
+```
 npm start
+```
 
-
-# Frontend Setup
+### Frontend Setup
 
 Open another terminal:
 
+```
 cd streamweaver-frontend
 npm install
 npm run dev
-
+```
 
 The frontend runs on:
 
+```
 http://localhost:5173
-
+```
 
 To create a production build:
 
+```
 npm run build
-
+```
 
 To preview the production build:
 
+```
 npm run preview
+```
 
+## Current Usage
 
-#  Current Usage
+1. **Start MongoDB**, then the backend:
+   ```
+   cd streamweaver-backend
+   npm run dev
+   ```
+   Confirm `MongoDB connected` and `Server running on http://localhost:3000` both print.
 
-1. Start the backend
+2. **Start the frontend**, in a separate terminal:
+   ```
+   cd streamweaver-frontend
+   npm run dev
+   ```
 
-cd streamweaver-backend
-npm run dev
+3. **Open the application**: `http://localhost:5173`
 
+4. **Upload a CSV** — the frontend parses it client-side and shows:
+   * File size, row count, column count
+   * Processing rate
+   * Malformed row count
+   * First 1,000-row virtualized preview
 
-2. Start the frontend
+5. **Switch to the Mapping tab** to edit destination field names and optional per-column JS transforms, with a live preview.
 
-cd streamweaver-frontend
-npm run dev
+6. **Click "Send full file to server"** to stream the real file through the backend pipeline (Busboy → CSVTransform → MongoDB), with live server-reported progress.
 
+## Performance Approach
 
-3. Open the application
+StreamWeaver is designed around three techniques.
 
-http://localhost:5173
+**Backend Streaming**
 
-
-4. Upload a CSV
-
-The current frontend accepts CSV files and provides:
-
-* File size
-* Number of rows processed
-* Processing rate
-* Number of columns
-* Malformed row count
-* First 1,000-row preview
-* Virtualized scrolling
-
-
-
-#  Performance Approach
-
-StreamWeaver is designed around two important techniques.
-
-# Backend Streaming
-
-Large files are processed through Node.js streams instead of loading the entire file into memory.
-
-
+```
 Large CSV
    ↓
-Stream
+Stream (Busboy)
    ↓
-Parser
+Parser (csv-parser)
    ↓
-Individual Rows
+Transform (CSVTransform)
+   ↓
+Batched bulkWrite → MongoDB
+```
 
+**Frontend Virtualization**
 
-# Frontend Virtualization
-
-The frontend does not render every preview row into the DOM.
-
-Instead:
-
-
+```
 1,000 Preview Rows
        ↓
    react-window
        ↓
 Only visible rows mounted
+```
 
+**Live Feedback Without Blocking**
 
-This keeps the interface responsive while scrolling through the preview.
+Progress (both client-side parsing and real server-side ingestion) is streamed incrementally via chunked parsing and Server-Sent Events, rather than the UI blocking until the whole file finishes.
 
+## Upcoming Development
 
-
-# Upcoming Development
-
-After Week 2, planned improvements include:
-
-* MongoDB batch insertion using `bulkWrite`
-* Secure JavaScript transformation sandbox
-* WebSocket-based live processing updates
+* Full memory benchmarking with a 2GB+ file (`GET /memory` endpoint already implemented, audit pending pipeline re-verification)
+* Secure JavaScript transformation sandbox via `isolated-vm`
+* WebSocket-based live processing updates (currently SSE)
 * Additional file formats
 * Advanced data validation
 * Transformation rule builder
-* Large-file memory benchmarking
-* Database integration
 
+## Current Project Status
 
+**Week 1: Completed**
+Streaming upload and virtualized CSV preview are implemented on both frontend and backend.
 
-# Current Project Status
+**Week 2: Completed**
+Node.js Transform streams, visual column mapping, MongoDB batch writes, and end-to-end frontend↔backend wiring are implemented. Final re-verification of the upload pipeline with large real-world files is in progress (see Known Issues).
 
-Week 1: Completed
+**Future: Planned**
+Secure `isolated-vm` transformation sandboxing, full 2GB memory audit, and WebSocket-based live progress will be implemented in later development stages.
 
-Streaming upload and virtualized CSV preview are implemented.
+## Project
 
-Week 2: In Progress
-
-The next development stage focuses on Node.js Transform streams and a visual column-mapping interface.
-
-Future: Planned
-
-MongoDB bulk operations, secure transformation execution and WebSocket-based live progress will be implemented in later development stages.
-
-
-
-# Project
-
-"StreamWeaver — High-Throughput No-Code ETL Pipeline"
+**StreamWeaver — High-Throughput No-Code ETL Pipeline**
 
 Built to make large-scale data processing accessible without requiring users to write custom scripts.
