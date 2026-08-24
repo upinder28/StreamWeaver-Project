@@ -81,6 +81,11 @@ Row-by-Row Processing
 * ✅ Row-by-row processing
 * ✅ Total row counting
 * ✅ Avoids loading the complete uploaded file into memory
+* ✅ CSV parser error handling
+* ✅ Header-based column mapping
+* ✅ Batch pause/resume flow control
+
+
 
 The `/upload` endpoint uses `req.pipe(bb)` and streams the uploaded file through `csv-parser`.
 
