@@ -1,4 +1,5 @@
 const { Transform } = require("stream");
+const ivm = require("isolated-vm");
 
 // Safely run a user-supplied JS expression against a single value.
 // Returns transformed string or original value on error.
@@ -11,6 +12,41 @@ function applyExpression(value, expression) {
     return result === undefined || result === null ? "" : String(result);
   } catch {
     return value;
+  }
+}
+
+// Week 3
+function applySandboxedExpression(value, expression) {
+  if (!expression || !expression.trim()) return value;
+
+  let isolate;
+
+  try {
+    isolate = new ivm.Isolate({
+      memoryLimit: 16,
+    });
+
+    const context = isolate.createContextSync();
+
+    context.global.setSync("value", value);
+
+    const script = isolate.compileScriptSync(
+      `"use strict"; (${expression})`
+    );
+
+    const result = script.runSync(context, {
+      timeout: 100,
+    });
+
+    return result === undefined || result === null
+      ? ""
+      : String(result);
+  } catch {
+    return value;
+  } finally {
+    if (isolate) {
+      isolate.dispose();
+    }
   }
 }
 
@@ -33,7 +69,12 @@ class CSVTransform extends Transform {
       for (const rule of this.mappingRules) {
         if (!rule.include) continue;
         const raw = row[rule.sourceIndex] !== undefined ? row[rule.sourceIndex] : "";
-        obj[rule.destination] = applyExpression(raw, rule.transform);
+        // obj[rule.destination] = applyExpression(raw, rule.transform);
+
+        obj[rule.destination] = applySandboxedExpression(
+  raw,
+  rule.transform
+);
       }
       this.push(obj);
     } else {
