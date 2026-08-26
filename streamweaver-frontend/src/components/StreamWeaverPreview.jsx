@@ -522,19 +522,9 @@ export default function StreamWeaverPreview() {
 
       {status === "parsing" && (
         <div style={styles.heroWrap}>
-          {/* <div className="sw-hero" style={styles.hero}> */}
-          <div
-            className="sw-hero"
-            style={styles.hero}
-            role="button"
-            tabIndex={0}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" || e.key === " ") {
-                e.preventDefault();
-                fileInputRef.current && fileInputRef.current.click();
-              }
-            }}
-          >
+          
+          <div className="sw-hero" style={styles.hero}>
+            
             <div style={styles.dropTitle}>Weaving through {fileName}…</div>
             <div style={styles.dropSub}>{formatBytes(fileSize)} total</div>
             <div style={styles.progressTrack}>
@@ -592,7 +582,7 @@ export default function StreamWeaverPreview() {
 
           {viewMode === "grid" && (
             <>
-              <div ref={gridWrapRef} style={styles.gridWrap}>
+              <div ref={gridWrapRef} style={{ ...styles.gridWrap, maxWidth: totalGridWidth + 24, margin: "0 auto" }}>
                 <div className="sw-scroll" style={styles.gridScrollX}>
                   <div style={{ width: totalGridWidth }}>
                     <div style={{ ...styles.headerRow, width: totalGridWidth }}>
