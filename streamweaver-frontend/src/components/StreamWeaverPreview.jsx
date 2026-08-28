@@ -493,7 +493,18 @@ export default function StreamWeaverPreview() {
       {dropTargetActive && (
         <div style={styles.heroWrap}>
           <div className={`sw-ring${dragActive ? " drag" : ""}`} style={styles.dropRing} />
-          <div className="sw-hero" style={styles.hero}>
+          <div
+            className="sw-hero"
+            style={styles.hero}
+            role="button"
+            tabIndex={0}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" || e.key === " ") {
+                e.preventDefault();
+                fileInputRef.current && fileInputRef.current.click();
+              }
+            }}
+          >
             <Upload size={30} color="#E8A33D" strokeWidth={1.6} />
             <div style={styles.dropTitle}>Drop a CSV to preview the first 1,000 rows</div>
             <div style={styles.dropSub}>
