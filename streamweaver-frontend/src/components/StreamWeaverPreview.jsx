@@ -764,6 +764,7 @@ export default function StreamWeaverPreview() {
 
               <div style={styles.footNote}>
                 <Waypoints size={13} color="#5A6472" />
+                Preview only — transforms run safely against the full file on the backend, not here in the browser.
               </div>
             </>
           )}
