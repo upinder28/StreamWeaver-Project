@@ -10,6 +10,14 @@ const BATCH_SIZE = 500;
 router.post("/", (req, res) => {
   const bb = busboy({ headers: req.headers });
   const fileSize = parseInt(req.headers["x-file-size"] || "0");
+  const uploadId = req.headers["x-upload-id"] || null;
+  const wsClient = uploadId ? req.wsClients?.get(uploadId) : null;
+
+  const sendProgress = (data) => {
+    const payload = JSON.stringify(data);
+    res.write(`data: ${payload}\n\n`);
+    if (wsClient && wsClient.readyState === 1) wsClient.send(payload);
+  };
 
   // Parse mapping rules from header: JSON array of { sourceIndex, destination, transform, include }
   let mappingRules = [];
@@ -26,8 +34,6 @@ router.post("/", (req, res) => {
   res.setHeader("Content-Type", "text/event-stream");
   res.setHeader("Cache-Control", "no-cache");
   res.setHeader("Connection", "keep-alive");
-
-  const sendProgress = (data) => res.write(`data: ${JSON.stringify(data)}\n\n`);
 
   const flushBatch = async () => {
     if (batch.length === 0) return;

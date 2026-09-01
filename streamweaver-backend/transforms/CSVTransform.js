@@ -1,52 +1,19 @@
 const { Transform } = require("stream");
 const ivm = require("isolated-vm");
 
-// Safely run a user-supplied JS expression against a single value.
-// Returns transformed string or original value on error.
+// Runs user expression inside an isolated V8 sandbox — no Node globals exposed.
 function applyExpression(value, expression) {
   if (!expression || !expression.trim()) return value;
+  const isolate = new ivm.Isolate({ memoryLimit: 8 });
   try {
-    // eslint-disable-next-line no-new-func
-    const fn = new Function("value", `"use strict"; return (${expression});`);
-    const result = fn(value);
+    const context = isolate.createContextSync();
+    context.global.setSync("value", new ivm.ExternalCopy(value).copyInto());
+    const result = isolate.compileScriptSync(`(${expression})`).runSync(context);
     return result === undefined || result === null ? "" : String(result);
   } catch {
     return value;
-  }
-}
-
-// Week 3
-function applySandboxedExpression(value, expression) {
-  if (!expression || !expression.trim()) return value;
-
-  let isolate;
-
-  try {
-    isolate = new ivm.Isolate({
-      memoryLimit: 16,
-    });
-
-    const context = isolate.createContextSync();
-
-    context.global.setSync("value", value);
-
-    const script = isolate.compileScriptSync(
-      `"use strict"; (${expression})`
-    );
-
-    const result = script.runSync(context, {
-      timeout: 100,
-    });
-
-    return result === undefined || result === null
-      ? ""
-      : String(result);
-  } catch {
-    return value;
   } finally {
-    if (isolate) {
-      isolate.dispose();
-    }
+    isolate.dispose();
   }
 }
 
@@ -69,12 +36,7 @@ class CSVTransform extends Transform {
       for (const rule of this.mappingRules) {
         if (!rule.include) continue;
         const raw = row[rule.sourceIndex] !== undefined ? row[rule.sourceIndex] : "";
-        // obj[rule.destination] = applyExpression(raw, rule.transform);
-
-        obj[rule.destination] = applySandboxedExpression(
-  raw,
-  rule.transform
-);
+        obj[rule.destination] = applyExpression(raw, rule.transform);
       }
       this.push(obj);
     } else {
