@@ -220,4 +220,127 @@ export default function StreamWeaverPreview() {
     },
     [previewRows, columns]
   );
+
+  // ---- drag handlers ----
+  const onDragOver = (e) => { e.preventDefault(); if (dropTargetActive) setDragActive(true); };
+  const onDragLeave = () => setDragActive(false);
+  const onDrop = (e) => { e.preventDefault(); setDragActive(false); if (dropTargetActive) handleFiles(e.dataTransfer.files); };
+
+  // ---- render ----
+  return (
+    <div style={styles.root}>
+      {/* Header */}
+      <div style={styles.topBar}>
+        <FileSpreadsheet size={22} color="#6EE7B7" />
+        <span style={styles.title}>StreamWeaver</span>
+        {status !== "idle" && (
+          <button style={styles.resetBtn} onClick={reset}>
+            <RotateCcw size={14} /> Reset
+          </button>
+        )}
+      </div>
+
+      {/* Drop zone */}
+      {(status === "idle" || status === "error") && (
+        <div
+          style={{ ...styles.dropZone, ...(dragActive ? styles.dropZoneActive : {}) }}
+          onDragOver={onDragOver}
+          onDragLeave={onDragLeave}
+          onDrop={onDrop}
+          onClick={() => fileInputRef.current && fileInputRef.current.click()}
+        >
+          <Upload size={36} color="#6EE7B7" />
+          <p style={styles.dropText}>Drop a CSV here or <span style={styles.dropLink}>browse</span></p>
+          <p style={styles.dropSub}>Previews up to 1,000 rows — streams the rest</p>
+          {status === "error" && <p style={styles.errorText}><AlertTriangle size={14} /> {errorMsg}</p>}
+          <input ref={fileInputRef} type="file" accept=".csv" style={{ display: "none" }} onChange={(e) => handleFiles(e.target.files)} />
+        </div>
+      )}
+
+      {/* Parsing / progress */}
+      {status === "parsing" && (
+        <div style={styles.progressWrap}>
+          <div style={styles.fileInfo}>
+            <HardDrive size={14} color="#94A3B8" />
+            <span style={styles.fileInfoText}>{fileName} — {formatBytes(fileSize)}</span>
+          </div>
+          <div style={styles.progressTrack}>
+            <div style={{ ...styles.progressBar, width: `${progress}%` }} />
+          </div>
+          <div style={styles.statsRow}>
+            <span><Rows3 size={13} /> {formatNumber(rowsSeen)} rows</span>
+            <span><Gauge size={13} /> {formatNumber(rate)} rows/sec</span>
+            {errorRowCount > 0 && <span style={{ color: "#F87171" }}><AlertTriangle size={13} /> {errorRowCount} bad rows</span>}
+          </div>
+        </div>
+      )}
+
+      {/* Ready — stats + grid */}
+      {status === "ready" && (
+        <>
+          <div style={styles.statsBar}>
+            <span style={styles.statChip}><CheckCircle2 size={13} color="#6EE7B7" /> {formatNumber(rowsSeen)} rows</span>
+            <span style={styles.statChip}><Columns3 size={13} color="#94A3B8" /> {columns.length} cols</span>
+            <span style={styles.statChip}><HardDrive size={13} color="#94A3B8" /> {formatBytes(fileSize)}</span>
+            {errorRowCount > 0 && <span style={{ ...styles.statChip, color: "#F87171" }}><AlertTriangle size={13} /> {errorRowCount} bad rows</span>}
+            <span style={{ ...styles.statChip, marginLeft: "auto", color: "#64748B", fontSize: 11 }}>
+              DOM rows: {mountedRange.end - mountedRange.start + 1} / {totalRows}
+            </span>
+          </div>
+
+          {/* Sticky header + virtualized body */}
+          <div style={styles.gridOuter}>
+            {/* Sticky column headers */}
+            <div style={{ ...styles.headerRow, width: totalGridWidth }}>
+              {columns.map((c) => (
+                <div key={c.key} style={{ ...styles.headerCell, width: c.width }}>{c.label}</div>
+              ))}
+            </div>
+            {/* Virtualized rows */}
+            <div ref={gridWrapRef} style={styles.gridBody}>
+              <List
+                height={gridHeight}
+                itemCount={totalRows}
+                itemSize={ROW_HEIGHT}
+                width="100%"
+                overscanCount={OVERSCAN}
+                onItemsRendered={handleItemsRendered}
+                innerElementType={({ children, style, ...rest }) => (
+                  <div style={{ ...style, width: totalGridWidth }} {...rest}>{children}</div>
+                )}
+              >
+                {Row}
+              </List>
+            </div>
+          </div>
+        </>
+      )}
+    </div>
+  );
 }
+
+const styles = {
+  root: { minHeight: "100vh", background: "#080D14", color: "#CBD5E1", fontFamily: "'Inter', sans-serif", display: "flex", flexDirection: "column" },
+  topBar: { display: "flex", alignItems: "center", gap: 10, padding: "14px 24px", borderBottom: "1px solid #161D28", background: "#0A1018" },
+  title: { fontSize: 18, fontWeight: 700, color: "#E2E8F0", letterSpacing: "-0.3px", flex: 1 },
+  resetBtn: { display: "flex", alignItems: "center", gap: 5, background: "#1E293B", border: "1px solid #334155", color: "#94A3B8", borderRadius: 6, padding: "5px 12px", cursor: "pointer", fontSize: 13 },
+  dropZone: { margin: "48px auto", width: "min(560px, 90%)", border: "2px dashed #1E293B", borderRadius: 16, padding: "52px 32px", textAlign: "center", cursor: "pointer", transition: "border-color .2s, background .2s", background: "#0A1018" },
+  dropZoneActive: { borderColor: "#6EE7B7", background: "#0D1F1A" },
+  dropText: { margin: "14px 0 4px", fontSize: 16, color: "#E2E8F0" },
+  dropLink: { color: "#6EE7B7", textDecoration: "underline" },
+  dropSub: { fontSize: 13, color: "#475569", margin: 0 },
+  errorText: { display: "flex", alignItems: "center", gap: 6, justifyContent: "center", color: "#F87171", marginTop: 14, fontSize: 13 },
+  progressWrap: { margin: "40px auto", width: "min(560px, 90%)", display: "flex", flexDirection: "column", gap: 12 },
+  fileInfo: { display: "flex", alignItems: "center", gap: 7, fontSize: 13, color: "#64748B" },
+  fileInfoText: { overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" },
+  progressTrack: { height: 6, background: "#1E293B", borderRadius: 99, overflow: "hidden" },
+  progressBar: { height: "100%", background: "linear-gradient(90deg,#6EE7B7,#3B82F6)", borderRadius: 99, transition: "width .15s" },
+  statsRow: { display: "flex", gap: 20, fontSize: 13, color: "#64748B", alignItems: "center" },
+  statsBar: { display: "flex", alignItems: "center", gap: 10, padding: "10px 20px", borderBottom: "1px solid #161D28", flexWrap: "wrap" },
+  statChip: { display: "flex", alignItems: "center", gap: 5, fontSize: 13, color: "#94A3B8" },
+  gridOuter: { flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" },
+  headerRow: { display: "flex", background: "#0D1520", borderBottom: "2px solid #1E293B", minWidth: "100%" },
+  headerCell: { padding: "0 12px", height: HEADER_HEIGHT, lineHeight: `${HEADER_HEIGHT}px`, fontSize: 12, fontWeight: 600, color: "#6EE7B7", textTransform: "uppercase", letterSpacing: "0.05em", flexShrink: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", borderRight: "1px solid #161D28" },
+  dataCell: { padding: "0 12px", height: ROW_HEIGHT, lineHeight: `${ROW_HEIGHT}px`, fontSize: 13, color: "#CBD5E1", flexShrink: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", borderRight: "1px solid #161D28" },
+  gridBody: { flex: 1, overflow: "hidden" },
+};
