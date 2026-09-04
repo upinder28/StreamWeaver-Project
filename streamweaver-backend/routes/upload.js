@@ -5,7 +5,7 @@ const CSVTransform = require("../transforms/CSVTransform");
 const Record = require("../models/Record");
 
 const router = express.Router();
-const BATCH_SIZE = 500;
+const BATCH_SIZE = 5000;
 
 router.post("/", (req, res) => {
   const bb = busboy({ headers: req.headers });
@@ -23,7 +23,14 @@ router.post("/", (req, res) => {
   let mappingRules = [];
   try {
     const raw = req.headers["x-mapping-rules"];
-    if (raw) mappingRules = JSON.parse(decodeURIComponent(raw));
+    if (raw) {
+      const parsed = JSON.parse(decodeURIComponent(raw));
+      if (Array.isArray(parsed)) {
+        mappingRules = parsed.filter(
+          (r) => r && typeof r === "object" && typeof r.sourceIndex === "number"
+        );
+      }
+    }
   } catch { /* use empty rules — identity transform */ }
 
   let rows = 0;
