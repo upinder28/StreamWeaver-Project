@@ -98,6 +98,11 @@ router.post("/", (req, res) => {
 
     csvParser.on("end", () => transformer.end());
 
+    csvParser.on("error", (err) => {
+      sendProgress({ error: `CSV parse error: ${err.message}` });
+      res.end();
+    });
+
     stream.pipe(csvParser);
   });
 
