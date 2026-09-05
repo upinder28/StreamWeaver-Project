@@ -105,6 +105,8 @@ export default function StreamWeaverPreview() {
   const [sendState, setSendState] = useState("idle");
   const [sendProgress, setSendProgress] = useState({ rows: 0, progress: 0, rate: 0 });
   const [sendError, setSendError] = useState("");
+  const [sendWarnings, setSendWarnings] = useState([]);
+  const wsRef = useRef(null);
 
   const fileInputRef = useRef(null);
   const rawFileRef = useRef(null); // holds the actual File object for the real upload
@@ -135,6 +137,8 @@ export default function StreamWeaverPreview() {
     setSendState("idle");
     setSendProgress({ rows: 0, progress: 0, rate: 0 });
     setSendError("");
+    setSendWarnings([]);
+    if (wsRef.current) { wsRef.current.close(); wsRef.current = null; }
     bufferRef.current = [];
     headerRef.current = null;
     rowCountRef.current = 0;
@@ -345,6 +349,20 @@ export default function StreamWeaverPreview() {
     setSendState("sending");
     setSendProgress({ rows: 0, progress: 0, rate: 0 });
     setSendError("");
+    setSendWarnings([]);
+
+    const uploadId = crypto.randomUUID();
+    const ws = new WebSocket(`ws://localhost:3000?uploadId=${uploadId}`);
+    wsRef.current = ws;
+    ws.onmessage = (e) => {
+      try {
+        const payload = JSON.parse(e.data);
+        if (payload.warning) setSendWarnings((w) => [...w, payload.warning]);
+        else if (payload.rows !== undefined)
+          setSendProgress({ rows: payload.rows, progress: payload.progress || 0, rate: payload.rate || 0 });
+        if (payload.done) setSendState("done");
+      } catch { /* ignore malformed frames */ }
+    };
 
     try {
       const formData = new FormData();
@@ -354,6 +372,7 @@ export default function StreamWeaverPreview() {
         method: "POST",
         headers: {
           "x-file-size": String(file.size),
+          "x-upload-id": uploadId,
           "x-mapping-rules": encodeURIComponent(JSON.stringify(mappingPayload)),
         },
         body: formData,
@@ -389,7 +408,7 @@ export default function StreamWeaverPreview() {
             setSendError(payload.error);
             return;
           }
-          if (payload.warning) continue; // bulkWrite hiccup on one batch — not fatal
+          if (payload.warning) { setSendWarnings((w) => [...w, payload.warning]); continue; }
           setSendProgress({
             rows: payload.rows || 0,
             progress: payload.progress || 0,
@@ -401,6 +420,7 @@ export default function StreamWeaverPreview() {
 
       setSendState((s) => (s === "sending" ? "done" : s));
     } catch (err) {
+      if (wsRef.current) { wsRef.current.close(); wsRef.current = null; }
       setSendState("error");
       setSendError(
         err && err.message
@@ -681,11 +701,22 @@ export default function StreamWeaverPreview() {
                       </div>
                     </>
                   )}
+                  {sendWarnings.length > 0 && (
+                    <div style={{ marginTop: 10, display: "flex", flexDirection: "column", gap: 4 }}>
+                      {sendWarnings.map((w, i) => (
+                        <div key={i} style={{ display: "flex", alignItems: "center", gap: 7 }}>
+                          <AlertTriangle size={13} color="#E8A33D" />
+                          <span style={{ fontSize: 12, color: "#E8A33D", fontFamily: "'IBM Plex Mono', monospace" }}>{w}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                   {sendState === "done" && (
                     <div style={styles.sendRow}>
                       <PartyPopper size={16} color="#57C278" />
                       <span style={styles.sendTitle}>
                         Done — {formatNumber(sendProgress.rows)} rows bulk-written to MongoDB.
+                        {sendWarnings.length > 0 && ` (${sendWarnings.length} batch warning${sendWarnings.length > 1 ? "s" : ""})`}
                       </span>
                     </div>
                   )}
