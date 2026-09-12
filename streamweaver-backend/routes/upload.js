@@ -32,6 +32,7 @@ router.post("/", (req, res) => {
       }
     }
   } catch { /* use empty rules — identity transform */ }
+  console.log("[DEBUG] mappingRules:", JSON.stringify(mappingRules.slice(0, 2)));
 
   let rows = 0;
   let bytesRead = 0;
@@ -47,8 +48,11 @@ router.post("/", (req, res) => {
     const ops = batch.map((doc) => ({ insertOne: { document: doc } }));
     batch = [];
     try {
-      await Record.bulkWrite(ops, { ordered: false });
+      console.log("[DEBUG] bulkWrite batch size:", ops.length, "sample:", ops[0]);
+      const result = await Record.bulkWrite(ops, { ordered: false });
+      console.log("[DEBUG] bulkWrite result:", result.insertedCount);
     } catch (err) {
+      console.error("[DEBUG] bulkWrite error:", err.message);
       sendProgress({ warning: `bulkWrite error: ${err.message}` });
     }
   };
@@ -61,6 +65,7 @@ router.post("/", (req, res) => {
     const csvParser = csv();
 
     csvParser.on("headers", (headerList) => {
+      console.log("[DEBUG] headers:", headerList);
       transformer = new CSVTransform(headerList, mappingRules);
 
       transformer.on("data", (jsonObj) => {
@@ -93,7 +98,9 @@ router.post("/", (req, res) => {
     });
 
     csvParser.on("data", (row) => {
-      transformer.write(Object.values(row));
+      if (!transformer) return;
+      // csv-parser already gives us a keyed object — pass it directly
+      transformer.write(row);
     });
 
     csvParser.on("end", () => transformer.end());

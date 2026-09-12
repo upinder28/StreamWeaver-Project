@@ -1,19 +1,15 @@
 const { Transform } = require("stream");
-const ivm = require("isolated-vm");
 
-// Runs user expression inside an isolated V8 sandbox — no Node globals exposed.
+// TODO Week 3: replace with isolated-vm sandbox
 function applyExpression(value, expression) {
   if (!expression || !expression.trim()) return value;
-  const isolate = new ivm.Isolate({ memoryLimit: 8 });
   try {
-    const context = isolate.createContextSync();
-    context.global.setSync("value", new ivm.ExternalCopy(value).copyInto());
-    const result = isolate.compileScriptSync(`(${expression})`).runSync(context);
+    // eslint-disable-next-line no-new-func
+    const fn = new Function("value", `"use strict"; return (${expression});`);
+    const result = fn(value);
     return result === undefined || result === null ? "" : String(result);
   } catch {
     return value;
-  } finally {
-    isolate.dispose();
   }
 }
 
@@ -30,22 +26,18 @@ class CSVTransform extends Transform {
   }
 
   _transform(row, encoding, callback) {
-    // If mapping rules provided, apply them; otherwise fall back to identity map.
+    const obj = {};
     if (this.mappingRules.length > 0) {
-      const obj = {};
       for (const rule of this.mappingRules) {
-        if (!rule.include) continue;
-        const raw = row[rule.sourceIndex] !== undefined ? row[rule.sourceIndex] : "";
+        if (rule.include === false) continue;
+        const raw = row[rule.source] !== undefined ? row[rule.source] : "";
         obj[rule.destination] = applyExpression(raw, rule.transform);
       }
-      this.push(obj);
     } else {
-      const obj = {};
-      this.headers.forEach((header, i) => {
-        obj[header] = row[i] !== undefined ? row[i] : "";
-      });
-      this.push(obj);
+      // identity: pass all fields through as-is
+      Object.assign(obj, row);
     }
+    this.push(obj);
     callback();
   }
 }
